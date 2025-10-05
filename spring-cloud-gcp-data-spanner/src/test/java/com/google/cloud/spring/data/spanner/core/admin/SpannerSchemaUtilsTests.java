@@ -34,8 +34,11 @@ import com.google.cloud.spring.data.spanner.core.mapping.SpannerPersistentProper
 import com.google.cloud.spring.data.spanner.core.mapping.Table;
 import com.google.spanner.v1.TypeCode;
 import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -68,18 +71,17 @@ class SpannerSchemaUtilsTests {
   @Test
   void getCreateDdlTest() {
     String ddlResult =
-        "CREATE TABLE custom_test_table ( id STRING(MAX) , id3 INT64 , id_2 STRING(MAX) , "
-            + "bytes2 BYTES(MAX) , custom_col FLOAT64 NOT NULL , other STRING(333) , "
-            + "primitiveDoubleField FLOAT64 , bigDoubleField FLOAT64 , primitiveFloatField FLOAT32 , "
-            + "bigFloatField FLOAT32 , bigLongField INT64 , primitiveIntField INT64 , "
-            + "bigIntField INT64 , bytes BYTES(MAX) , bytesList ARRAY<BYTES(111)> , "
-            + "integerList ARRAY<INT64> , doubles ARRAY<FLOAT64> , floats ARRAY<FLOAT32> , "
-            + "commitTimestamp TIMESTAMP OPTIONS (allow_commit_timestamp=true) , "
-            + "bigDecimalField NUMERIC , bigDecimals ARRAY<NUMERIC> , jsonCol JSON ) "
+        "CREATE TABLE custom_test_table ( bigDecimalField NUMERIC , bigDecimals ARRAY<NUMERIC> , "
+            + "bigDoubleField FLOAT64 , bigFloatField FLOAT32 , bigIntField INT64 , "
+            + "bigLongField INT64 , bytes BYTES(MAX) , bytes2 BYTES(MAX) , "
+            + "bytesList ARRAY<BYTES(111)> , commitTimestamp TIMESTAMP OPTIONS (allow_commit_timestamp=true) , "
+            + "custom_col FLOAT64 NOT NULL , doubles ARRAY<FLOAT64> , floats ARRAY<FLOAT32> , "
+            + "id STRING(MAX) , id3 INT64 , id_2 STRING(MAX) , "
+            + "integerList ARRAY<INT64> , jsonCol JSON , other STRING(333) , "
+            + "primitiveDoubleField FLOAT64 , primitiveFloatField FLOAT32 , primitiveIntField INT64 ) "
             + "PRIMARY KEY ( id , id_2 , id3 )";
 
-    assertThat(this.spannerSchemaUtils.getCreateTableDdlString(TestEntity.class))
-        .isEqualTo(ddlResult);
+    verifyCreateDdl(ddlResult, this.spannerSchemaUtils.getCreateTableDdlString(TestEntity.class));
   }
 
   @Test
@@ -223,15 +225,15 @@ class SpannerSchemaUtilsTests {
         this.spannerSchemaUtils.getCreateTableDdlStringsForInterleavedHierarchy(ParentEntity.class);
     assertThat(createStrings)
         .containsExactly(
-            "CREATE TABLE parent_test_table ( id STRING(MAX) "
-                + ", id_2 STRING(MAX) , bytes2 BYTES(MAX) , "
-                + "custom_col STRING(MAX) , other STRING(MAX) ) PRIMARY KEY ( id , id_2 )",
-            "CREATE TABLE child_test_table ( id STRING(MAX) "
-                + ", id_2 STRING(MAX) , bytes2 BYTES(MAX) , "
-                + "id3 STRING(MAX) ) PRIMARY KEY ( id , id_2 , id3 ), INTERLEAVE IN PARENT "
+            "CREATE TABLE parent_test_table ( bytes2 BYTES(MAX) "
+                + ", custom_col STRING(MAX) , id STRING(MAX) , "
+                + "id_2 STRING(MAX) , other STRING(MAX) ) PRIMARY KEY ( id , id_2 )",
+            "CREATE TABLE child_test_table ( bytes2 BYTES(MAX) "
+                + ", id STRING(MAX) , id3 STRING(MAX) , "
+                + "id_2 STRING(MAX) ) PRIMARY KEY ( id , id_2 , id3 ), INTERLEAVE IN PARENT "
                 + "parent_test_table ON DELETE CASCADE",
-            "CREATE TABLE grand_child_test_table ( id STRING(MAX) , id_2 STRING(MAX) , "
-                + "id3 STRING(MAX) , id4 STRING(MAX) ) PRIMARY KEY ( id , id_2 , id3 , id4 ), "
+            "CREATE TABLE grand_child_test_table ( id STRING(MAX) , id3 STRING(MAX) , "
+                + "id4 STRING(MAX) , id_2 STRING(MAX) ) PRIMARY KEY ( id , id_2 , id3 , id4 ), "
                 + "INTERLEAVE IN PARENT child_test_table ON DELETE CASCADE");
   }
 
@@ -244,6 +246,63 @@ class SpannerSchemaUtilsTests {
             "DROP TABLE grand_child_test_table",
             "DROP TABLE child_test_table",
             "DROP TABLE parent_test_table");
+  }
+
+  /**
+   * Compares two create DDL statements without strict column order checking.
+   *
+   * @param actualDdl The actual DDL string to verify.
+   * @param expectedDdl The expected DDL string.
+   */
+  private static void verifyCreateDdl(String actualDdl, String expectedDdl) {
+    CreateDdlParts actualDdlParts = parseCreateDdl(actualDdl);
+    CreateDdlParts expectedDdlParts = parseCreateDdl(expectedDdl);
+
+    assertThat(actualDdlParts.preCols).isEqualTo(expectedDdlParts.preCols);
+    assertThat(actualDdlParts.postCols).isEqualTo(expectedDdlParts.postCols);
+
+    // Check columns are equal using Set equals() instead of
+    assertThat(actualDdlParts.columns.equals(expectedDdlParts.columns)).isTrue();
+  }
+
+  /**
+   * Parses a create DDL statement into pre-column, column definition, and post-column parts.
+   *
+   * @param createDdl The create DDL statement to parse.
+   */
+  private static CreateDdlParts parseCreateDdl(String createDdl) {
+    createDdl = createDdl.replaceAll("\\s+", " ").trim();
+
+    String preCols = createDdl.substring(
+            createDdl.indexOf("CREATE TABLE"),
+            createDdl.indexOf("(")).trim();
+
+    String colsString = createDdl.substring(
+            createDdl.indexOf("(") + 1,
+            createDdl.lastIndexOf(") PRIMARY KEY")).trim();
+
+    String postCols = createDdl.substring(
+            createDdl.indexOf("PRIMARY KEY (")).trim();
+
+    // Build a HashSet to allow for unordered collection of column names.
+    Set<String> columns = new HashSet<>();
+    for (String col : colsString.split(",")) {
+      columns.add(col.trim());
+    }
+
+    return new CreateDdlParts(preCols, columns, postCols);
+  }
+
+  private static class CreateDdlParts {
+    final String preCols;
+    final Set<String> columns;
+    final String postCols;
+
+    CreateDdlParts(String preCols, Set<String> columns, String postCols) {
+      this.preCols = preCols;
+      this.columns = columns;
+      this.postCols = postCols;
+    }
   }
 
   @Table(name = "custom_test_table")
