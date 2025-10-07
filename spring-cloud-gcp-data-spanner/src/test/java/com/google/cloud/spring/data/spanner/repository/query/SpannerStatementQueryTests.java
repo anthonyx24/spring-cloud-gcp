@@ -18,6 +18,7 @@ package com.google.cloud.spring.data.spanner.repository.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -40,8 +41,10 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +58,8 @@ import org.springframework.data.repository.query.ParametersSource;
 
 /** Tests Spanner statement queries. */
 class SpannerStatementQueryTests {
+
+  private static final String SQL_COLUMNS = "shares, trader_id, ticker, price, action, id, value";
 
   private static final Object[] EMPTY_PARAMETERS = new Object[0];
 
@@ -126,7 +131,7 @@ class SpannerStatementQueryTests {
                       + " AND price>@tag10 AND price<=@tag11 AND price IN UNNEST(@tag12) AND"
                       + " value<@tag13 ) ORDER BY id DESC LIMIT 3";
 
-              assertThat(statement.getSql()).isEqualTo(expectedQuery);
+              verifySql(statement.getSql(), expectedQuery, "SELECT DISTINCT", "FROM trades");
 
               Map<String, Value> paramMap = statement.getParameters();
 
@@ -434,6 +439,65 @@ class SpannerStatementQueryTests {
     assertThatThrownBy(() -> this.partTreeSpannerQuery.execute(EMPTY_PARAMETERS))
             .isInstanceOf(UnsupportedOperationException.class)
             .hasMessage("The statement type: BETWEEN (2): [IsBetween, " + "Between] is not supported.");
+  }
+
+  /**
+   * Compares two create DDL statements without strict column order checking.
+   *
+   * @param actualSql The actual DDL string to verify.
+   * @param expectedSql The expected DDL string.
+   */
+  private static void verifySql(String actualSql, String expectedSql, String preCol, String postCol) {
+    try {
+      SqlParts actualDdlParts = parseSql(actualSql, preCol, postCol);
+      SqlParts expectedDdlParts = parseSql(expectedSql, preCol, postCol);
+
+      assertThat(actualDdlParts.preCols).isEqualTo(expectedDdlParts.preCols);
+      assertThat(actualDdlParts.postCols).isEqualTo(expectedDdlParts.postCols);
+
+      // Check columns are equal using Set equals() instead of
+      assertThat(actualDdlParts.columns.equals(expectedDdlParts.columns)).isTrue();
+    } catch (IndexOutOfBoundsException e) {
+      fail(e.getMessage());
+    }
+  }
+
+  /**
+   * Parses a SQL statement into pre-column, column definition, and post-column parts.
+   *
+   * @param sqlStatement The SQL statement to parse.
+   * @param preCols The part of the SQL statement before columns.
+   * @param postCols The part of the SQL statement after columns.
+   */
+  private static SqlParts parseSql(String sqlStatement, String preCols, String postCols) {
+    int colStart = sqlStatement.indexOf(preCols) + preCols.length();
+    int colEnd = sqlStatement.indexOf(postCols);
+
+    String preColPart = sqlStatement.substring(0, colStart);
+
+    String colsString = sqlStatement.substring(colStart, colEnd);
+
+    String postColPart = sqlStatement.substring(colEnd);
+
+    // Build a HashSet to allow for unordered collection of column names.
+    Set<String> columns = new HashSet<>();
+    for (String col : colsString.split(",")) {
+      columns.add(col.trim());
+    }
+
+    return new SqlParts(preColPart, columns, postColPart);
+  }
+
+  private static class SqlParts {
+    final String preCols;
+    final Set<String> columns;
+    final String postCols;
+
+    SqlParts(String preCols, Set<String> columns, String postCols) {
+      this.preCols = preCols;
+      this.columns = columns;
+      this.postCols = postCols;
+    }
   }
 
   @Table(name = "trades")
