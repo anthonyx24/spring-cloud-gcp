@@ -59,8 +59,6 @@ import org.springframework.data.repository.query.ParametersSource;
 /** Tests Spanner statement queries. */
 class SpannerStatementQueryTests {
 
-  private static final String SQL_COLUMNS = "shares, trader_id, ticker, price, action, id, value";
-
   private static final Object[] EMPTY_PARAMETERS = new Object[0];
 
   private SpannerTemplate spannerTemplate;
@@ -240,7 +238,7 @@ class SpannerStatementQueryTests {
                       + " OR ( trader_id=@tag2 AND price<@tag3 ) OR ( price>=@tag4 AND id IS NOT NULL AND"
                       + " trader_id=NULL AND trader_id LIKE @tag7 AND price=TRUE AND price=FALSE"
                       + " AND price>@tag10 AND price<=@tag11 ) ORDER BY id DESC LIMIT 1)";
-              assertThat(statement.getSql()).isEqualTo(expectedSql);
+              verifySql(statement.getSql(), expectedSql, "SELECT DISTINCT", "FROM trades");
 
               Map<String, Value> paramMap = statement.getParameters();
 
@@ -308,7 +306,7 @@ class SpannerStatementQueryTests {
             invocation -> {
               Statement statement = invocation.getArgument(1);
 
-              assertThat(statement.getSql()).isEqualTo(expectedSql);
+              verifySql(statement.getSql(), expectedSql, "SELECT", "FROM trades");
 
               Map<String, Value> paramMap = statement.getParameters();
 
@@ -353,7 +351,7 @@ class SpannerStatementQueryTests {
             invocation -> {
               Statement statement = invocation.getArgument(1);
 
-              assertThat(statement.getSql()).isEqualTo(expectedSql);
+              verifySql(statement.getSql(), expectedSql, "SELECT", "FROM trades");
 
               Map<String, Value> paramMap = statement.getParameters();
 
