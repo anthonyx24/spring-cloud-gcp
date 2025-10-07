@@ -440,12 +440,12 @@ class SpannerStatementQueryTests {
   }
 
   /**
-   * Compares two create DDL statements without strict column order checking.
+   * Compares two SQL statements without strict column order checking.
    *
-   * @param actualSql The actual DDL string to verify.
-   * @param expectedSql The expected DDL string.
-   * @param preCol Any substring that directly precedes the columns.
-   * @param postCol Any substring that directly follows the columns.
+   * @param actualSql The actual SQL string to verify.
+   * @param expectedSql The expected SQL string.
+   * @param preCol Any substring that directly precedes the columns (for indexing).
+   * @param postCol Any substring that directly follows the columns (for indexing).
    */
   private static void verifySql(String actualSql, String expectedSql, String preCol, String postCol) {
     try {
