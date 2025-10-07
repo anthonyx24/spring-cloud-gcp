@@ -444,18 +444,21 @@ class SpannerStatementQueryTests {
    *
    * @param actualSql The actual DDL string to verify.
    * @param expectedSql The expected DDL string.
+   * @param preCol Any substring that directly precedes the columns.
+   * @param postCol Any substring that directly follows the columns.
    */
   private static void verifySql(String actualSql, String expectedSql, String preCol, String postCol) {
     try {
-      SqlParts actualDdlParts = parseSql(actualSql, preCol, postCol);
-      SqlParts expectedDdlParts = parseSql(expectedSql, preCol, postCol);
+      SqlParts actualSqlParts = parseSql(actualSql, preCol, postCol);
+      SqlParts expectedSqlParts = parseSql(expectedSql, preCol, postCol);
 
-      assertThat(actualDdlParts.preCols).isEqualTo(expectedDdlParts.preCols);
-      assertThat(actualDdlParts.postCols).isEqualTo(expectedDdlParts.postCols);
+      assertThat(actualSqlParts.preColsPart).isEqualTo(expectedSqlParts.preColsPart);
+      assertThat(actualSqlParts.postColsPart).isEqualTo(expectedSqlParts.postColsPart);
 
       // Check columns are equal using Set equals() instead of
-      assertThat(actualDdlParts.columns.equals(expectedDdlParts.columns)).isTrue();
+      assertThat(actualSqlParts.columns.equals(expectedSqlParts.columns)).isTrue();
     } catch (IndexOutOfBoundsException e) {
+      // Index out of bounds happens if the preCol or postCol substrings are not found.
       fail(e.getMessage());
     }
   }
@@ -487,14 +490,14 @@ class SpannerStatementQueryTests {
   }
 
   private static class SqlParts {
-    final String preCols;
+    final String preColsPart;
     final Set<String> columns;
-    final String postCols;
+    final String postColsPart;
 
-    SqlParts(String preCols, Set<String> columns, String postCols) {
-      this.preCols = preCols;
+    SqlParts(String preColsPart, Set<String> columns, String postColsPart) {
+      this.preColsPart = preColsPart;
       this.columns = columns;
-      this.postCols = postCols;
+      this.postColsPart = postColsPart;
     }
   }
 
