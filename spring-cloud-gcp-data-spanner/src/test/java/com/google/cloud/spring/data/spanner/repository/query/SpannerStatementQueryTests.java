@@ -470,7 +470,7 @@ class SpannerStatementQueryTests {
    * @param preCols The part of the SQL statement before columns.
    * @param postCols The part of the SQL statement after columns.
    */
-  private static SqlParts parseSql(String sqlStatement, String preCols, String postCols) {
+  private static SqlParts parseSql(String sqlStatement, String preCols, String postCols) throws IndexOutOfBoundsException {
     int colStart = sqlStatement.indexOf(preCols) + preCols.length();
     int colEnd = sqlStatement.indexOf(postCols);
 
