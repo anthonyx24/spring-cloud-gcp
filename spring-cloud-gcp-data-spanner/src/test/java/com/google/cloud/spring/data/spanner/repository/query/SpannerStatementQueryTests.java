@@ -18,6 +18,7 @@ package com.google.cloud.spring.data.spanner.repository.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -40,8 +41,10 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
@@ -126,7 +129,7 @@ class SpannerStatementQueryTests {
                       + " AND price>@tag10 AND price<=@tag11 AND price IN UNNEST(@tag12) AND"
                       + " value<@tag13 ) ORDER BY id DESC LIMIT 3";
 
-              assertThat(statement.getSql()).isEqualTo(expectedQuery);
+              verifySql(statement.getSql(), expectedQuery, "SELECT DISTINCT", "FROM trades");
 
               Map<String, Value> paramMap = statement.getParameters();
 
@@ -235,7 +238,7 @@ class SpannerStatementQueryTests {
                       + " OR ( trader_id=@tag2 AND price<@tag3 ) OR ( price>=@tag4 AND id IS NOT NULL AND"
                       + " trader_id=NULL AND trader_id LIKE @tag7 AND price=TRUE AND price=FALSE"
                       + " AND price>@tag10 AND price<=@tag11 ) ORDER BY id DESC LIMIT 1)";
-              assertThat(statement.getSql()).isEqualTo(expectedSql);
+              verifySql(statement.getSql(), expectedSql, "SELECT DISTINCT", "FROM trades");
 
               Map<String, Value> paramMap = statement.getParameters();
 
@@ -303,7 +306,7 @@ class SpannerStatementQueryTests {
             invocation -> {
               Statement statement = invocation.getArgument(1);
 
-              assertThat(statement.getSql()).isEqualTo(expectedSql);
+              verifySql(statement.getSql(), expectedSql, "SELECT", "FROM trades");
 
               Map<String, Value> paramMap = statement.getParameters();
 
@@ -348,7 +351,7 @@ class SpannerStatementQueryTests {
             invocation -> {
               Statement statement = invocation.getArgument(1);
 
-              assertThat(statement.getSql()).isEqualTo(expectedSql);
+              verifySql(statement.getSql(), expectedSql, "SELECT", "FROM trades");
 
               Map<String, Value> paramMap = statement.getParameters();
 
@@ -434,6 +437,68 @@ class SpannerStatementQueryTests {
     assertThatThrownBy(() -> this.partTreeSpannerQuery.execute(EMPTY_PARAMETERS))
             .isInstanceOf(UnsupportedOperationException.class)
             .hasMessage("The statement type: BETWEEN (2): [IsBetween, " + "Between] is not supported.");
+  }
+
+  /**
+   * Compares two SQL statements without strict column order checking.
+   *
+   * @param actualSql The actual SQL string to verify.
+   * @param expectedSql The expected SQL string.
+   * @param preCol Any substring that directly precedes the columns (for indexing).
+   * @param postCol Any substring that directly follows the columns (for indexing).
+   */
+  private static void verifySql(String actualSql, String expectedSql, String preCol, String postCol) {
+    try {
+      SqlParts actualSqlParts = parseSql(actualSql, preCol, postCol);
+      SqlParts expectedSqlParts = parseSql(expectedSql, preCol, postCol);
+
+      assertThat(actualSqlParts.preColsPart).isEqualTo(expectedSqlParts.preColsPart);
+      assertThat(actualSqlParts.postColsPart).isEqualTo(expectedSqlParts.postColsPart);
+
+      // Check columns are equal using Set equals() instead of
+      assertThat(actualSqlParts.columns.equals(expectedSqlParts.columns)).isTrue();
+    } catch (IndexOutOfBoundsException e) {
+      // Index out of bounds happens if the preCol or postCol substrings are not found.
+      fail(e.getMessage());
+    }
+  }
+
+  /**
+   * Parses a SQL statement into pre-column, column definition, and post-column parts.
+   *
+   * @param sqlStatement The SQL statement to parse.
+   * @param preCols The part of the SQL statement before columns.
+   * @param postCols The part of the SQL statement after columns.
+   */
+  private static SqlParts parseSql(String sqlStatement, String preCols, String postCols) throws IndexOutOfBoundsException {
+    int colStart = sqlStatement.indexOf(preCols) + preCols.length();
+    int colEnd = sqlStatement.indexOf(postCols);
+
+    String preColPart = sqlStatement.substring(0, colStart);
+
+    String colsString = sqlStatement.substring(colStart, colEnd);
+
+    String postColPart = sqlStatement.substring(colEnd);
+
+    // Build a HashSet to allow for unordered collection of column names.
+    Set<String> columns = new HashSet<>();
+    for (String col : colsString.split(",")) {
+      columns.add(col.trim());
+    }
+
+    return new SqlParts(preColPart, columns, postColPart);
+  }
+
+  private static class SqlParts {
+    final String preColsPart;
+    final Set<String> columns;
+    final String postColsPart;
+
+    SqlParts(String preColsPart, Set<String> columns, String postColsPart) {
+      this.preColsPart = preColsPart;
+      this.columns = columns;
+      this.postColsPart = postColsPart;
+    }
   }
 
   @Table(name = "trades")
